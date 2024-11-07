@@ -260,31 +260,37 @@ class Pinai {
     }
 
     // Collect coins if available
-    async collectCoins(token, coin, proxy) {
-        const url = "https://prod-api.pinai.tech/home/collect";
-        const axiosInstance = this.createAxiosInstance(proxy);
-        axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        const payload = [{ type: coin.type, count: coin.count }];
+    async collectCoins(token, coin) {
+    const url = "https://prod-api.pinai.tech/home/collect";
+    const headers = { ...this.headers, "Authorization": `Bearer ${token}` };
+    const payload = [{ type: coin.type, count: coin.count }];
 
+    let retries = 3;  // Set retry count
+    while (coin.count > 0 && retries > 0) {
         try {
-            while (coin.count > 0) {
-                const response = await axiosInstance.post(url, payload);
-                if (response.status === 200) {
-                    coin.count = response.data.coins.find(c => c.type === "Telegram").count;
-                    this.log(`Collected successfully, remaining: ${coin.count}`, 'success');
-
-                    if (coin.count === 0) break;
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                } else {
-                    this.log(`Error collecting coins: ${response.statusText}`, 'error');
-                    break;
-                }
+            const response = await axios.post(url, payload, { headers, timeout: 20000 });
+            if (response.status === 200) {
+                coin.count = response.data.coins.find(c => c.type === "Telegram").count;
+                this.log(`Collected successfully, remaining: ${coin.count}`, 'success');
+                if (coin.count === 0) break;
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            } else {
+                this.log(`Error collecting coins: ${response.statusText}`, 'error');
+                break;
             }
-            this.log("All coins collected.", 'success');
         } catch (error) {
-            this.log(`API error in collect endpoint: ${error.message}`, 'error');
+            this.log(`Error in collect endpoint: ${error.message}`, 'error');
+            retries -= 1;  // Decrease retry count on failure
+            if (retries > 0) {
+                this.log(`Retrying... (${3 - retries} retries left)`, 'warning');
+            } else {
+                this.log("Max retries reached. Moving to next task.", 'error');
+            }
         }
     }
+    this.log("All coins collected or retries exhausted.", 'success');
+    }
+
     
     // Retrieve list of tasks from the server
     async getTasks(token, proxy) {
